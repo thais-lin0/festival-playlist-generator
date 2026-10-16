@@ -10,6 +10,7 @@ import {
   getJob,
   getLineup,
   getSpotifyConnection,
+  listJobs,
   listLineups,
   newId,
   putJob,
@@ -227,6 +228,8 @@ const createPlaylistJob: Handler = async (event, sub) => {
   return json(202, job);
 };
 
+const listPlaylists: Handler = async (_event, sub) => json(200, { playlists: await listJobs(sub) });
+
 const getPlaylistJob: Handler = async (event, sub) => {
   const job = await getJob(sub, event.pathParameters!.id!);
   if (!job) return error(404, "Playlist não encontrada.");
@@ -245,6 +248,7 @@ const routes: Record<string, Handler> = {
   "POST /spotify/authorize": spotifyAuthorize,
   "DELETE /spotify/connection": spotifyDisconnect,
   "POST /playlists": createPlaylistJob,
+  "GET /playlists": listPlaylists,
   "GET /playlists/{id}": getPlaylistJob,
 };
 

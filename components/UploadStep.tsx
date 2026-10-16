@@ -25,9 +25,10 @@ interface Props {
   onSignedIn: () => void;
   onAuthRequired: () => void;
   onLineup: (lineup: Lineup) => void;
+  onOpenHistory: () => void;
 }
 
-export function UploadStep({ user, authMode, onAuthMode, onSignedIn, onAuthRequired, onLineup }: Props) {
+export function UploadStep({ user, authMode, onAuthMode, onSignedIn, onAuthRequired, onLineup, onOpenHistory }: Props) {
   const [over, setOver] = useState(false);
   const [busy, setBusy] = useState(false);
   const [phase, setPhase] = useState(0);
@@ -140,6 +141,7 @@ export function UploadStep({ user, authMode, onAuthMode, onSignedIn, onAuthRequi
                 {[l.festival ?? "Sem nome", l.edition].filter(Boolean).join(" ")}
               </button>
             ))}
+            <button className="linkish" onClick={onOpenHistory}>ver histórico →</button>
           </div>
         )}
       </div>

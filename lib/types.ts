@@ -109,6 +109,17 @@ export interface PlaylistJob {
   createdAt: string;
 }
 
+export interface PlaylistSummary {
+  id: string;
+  lineupId: string;
+  status: PlaylistJobStatus;
+  playlistName: string;
+  playlistUrl: string | null;
+  tracksAdded: number;
+  artistsRequested: number;
+  createdAt: string;
+}
+
 export interface SpotifyStatus {
   configured: boolean;
   connected: boolean;

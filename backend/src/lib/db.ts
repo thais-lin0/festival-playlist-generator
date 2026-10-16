@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import { DeleteCommand, DynamoDBDocumentClient, GetCommand, PutCommand, QueryCommand, UpdateCommand } from "@aws-sdk/lib-dynamodb";
-import type { Lineup, LineupSummary, PlaylistJob, PlaylistRequest } from "../../../lib/types";
+import type { Lineup, LineupSummary, PlaylistJob, PlaylistRequest, PlaylistSummary } from "../../../lib/types";
 import { env } from "./env";
 
 // Single-table design:
@@ -37,7 +37,7 @@ export async function updateLineup(sub: string, id: string, patch: Partial<Lineu
   await update({ PK: user(sub), SK: `LINEUP#${id}` }, patch);
 }
 
-export async function listLineups(sub: string, limit = 20): Promise<LineupSummary[]> {
+export async function listLineups(sub: string, limit = 50): Promise<LineupSummary[]> {
   const out = await doc.send(
     new QueryCommand({
       TableName: table(),
@@ -72,6 +72,31 @@ export async function getJob(sub: string, id: string): Promise<(PlaylistJob & { 
   if (!out.Item) return null;
   const { PK: _pk, SK: _sk, entity: _e, ttl: _t, ...job } = out.Item;
   return job as PlaylistJob & { request: PlaylistRequest };
+}
+
+/** Newest first; leaves out the track list so the history stays light. */
+export async function listJobs(sub: string, limit = 100): Promise<PlaylistSummary[]> {
+  const out = await doc.send(
+    new QueryCommand({
+      TableName: table(),
+      KeyConditionExpression: "PK = :pk AND begins_with(SK, :sk)",
+      ExpressionAttributeValues: { ":pk": user(sub), ":sk": "JOB#" },
+      ProjectionExpression: "id, #s, createdAt, #rq.lineupId, #rq.#n, #rq.artists, #r.playlistUrl, #r.tracksAdded",
+      ExpressionAttributeNames: { "#s": "status", "#rq": "request", "#r": "result", "#n": "name" },
+      ScanIndexForward: false,
+      Limit: limit,
+    }),
+  );
+  return (out.Items ?? []).map((i) => ({
+    id: i.id,
+    lineupId: i.request?.lineupId ?? "",
+    status: i.status,
+    playlistName: i.request?.name ?? "Playlist",
+    playlistUrl: i.result?.playlistUrl ?? null,
+    tracksAdded: i.result?.tracksAdded ?? 0,
+    artistsRequested: (i.request?.artists ?? []).length,
+    createdAt: i.createdAt,
+  }));
 }
 
 export async function updateJob(sub: string, id: string, patch: Partial<PlaylistJob>): Promise<void> {

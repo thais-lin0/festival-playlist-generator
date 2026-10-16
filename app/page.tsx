@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { AuthMode } from "@/components/AuthCard";
+import { HistoryPage } from "@/components/HistoryPage";
 import { UploadStep } from "@/components/UploadStep";
 import { SelectStep } from "@/components/SelectStep";
 import { PlaylistStep } from "@/components/PlaylistStep";
@@ -22,12 +23,16 @@ export default function Home() {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [authMode, setAuthMode] = useState<AuthMode>("signin");
   const [notice, setNotice] = useState<string | null>(null);
+  // "history" is a separate page reached from the header; the main flow stays upload -> selection -> playlist.
+  const [page, setPage] = useState<"flow" | "history">("flow");
 
   useEffect(() => {
     const saved = loadState();
     if (saved) setState(saved);
     setUser(currentUser());
-    const spotify = new URLSearchParams(window.location.search).get("spotify");
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("view") === "history" && currentUser()) setPage("history");
+    const spotify = params.get("spotify");
     if (spotify) {
       setNotice(SPOTIFY_NOTICES[spotify] ?? null);
       window.history.replaceState(null, "", "/");
@@ -38,6 +43,13 @@ export default function Home() {
   useEffect(() => {
     if (hydrated) saveState(state);
   }, [state, hydrated]);
+
+  // Keep the history page addressable (/?view=history) so reloads and bookmarks land there.
+  useEffect(() => {
+    if (!hydrated) return;
+    const url = page === "history" ? "/?view=history" : "/";
+    if (window.location.pathname + window.location.search !== url) window.history.replaceState(null, "", url);
+  }, [page, hydrated]);
 
   useEffect(() => {
     if (!notice) return;
@@ -64,6 +76,7 @@ export default function Home() {
 
   const openLineup = useCallback((lineup: Lineup) => {
     lastSaved.current = JSON.stringify(lineup.selection);
+    setPage("flow");
     setState(stateForLineup(lineup));
     window.scrollTo({ top: 0 });
   }, []);
@@ -71,17 +84,20 @@ export default function Home() {
   // Session expired or revoked: back to the start, where the login form lives.
   const onAuthRequired = useCallback(() => {
     setUser(null);
+    setPage("flow");
     setAuthMode("signin");
     setState((s) => ({ ...s, step: 1 }));
   }, []);
 
   const restart = () => {
+    setPage("flow");
     clearState();
     setState(initialState);
     window.scrollTo({ top: 0 });
   };
 
   const goto = (step: 1 | 2 | 3) => {
+    setPage("flow");
     update({ step });
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
@@ -97,28 +113,40 @@ export default function Home() {
     setState(initialState);
     setUser(null);
     setAuthMode("signin");
+    setPage("flow");
   }
+
+  const openHistory = () => {
+    setPage("history");
+    window.scrollTo({ top: 0 });
+  };
 
   const stepState = (n: number) => (state.step === n ? "current" : state.step > n ? "done" : "todo");
   // Step chips double as navigation: back to any step already reached.
-  const canGo = (n: 1 | 2 | 3) => n < state.step || (n === 2 && Boolean(state.lineup)) ;
+  const canGo = (n: 1 | 2 | 3) => (n === 1 ? true : n === 2 ? Boolean(state.lineup) : state.step === 3);
+  const onHistory = page === "history";
 
   return (
-    <main className={`shell ${state.step === 1 ? "onepage" : ""}`}>
+    <main className={`shell ${!onHistory && state.step === 1 ? "onepage" : ""}`}>
       <header className="masthead">
         <button className="wordmark display" onClick={restart}>
           Line-up <span className="arrow">→</span> Playlist
         </button>
         <div className="mast-right">
-          {state.step > 1 && (
+          {user && (
+            <button className="btn alt small" aria-pressed={onHistory} onClick={openHistory} disabled={onHistory}>
+              ☰ Meu histórico
+            </button>
+          )}
+          {!onHistory && state.step > 1 && (
             <button className="btn alt small" onClick={restart}>
               + Novo cartaz
             </button>
           )}
           <ol className="steps" aria-label="Etapas">
             {([1, 2, 3] as const).map((n) => (
-              <li key={n} data-state={stepState(n)}>
-                <button disabled={state.step === n || !canGo(n)} onClick={() => (n === 1 ? restart() : goto(n))}>
+              <li key={n} data-state={onHistory ? "todo" : stepState(n)}>
+                <button disabled={(!onHistory && state.step === n) || !canGo(n)} onClick={() => (n === 1 ? restart() : goto(n))}>
                   0{n} {["Cartaz", "Seleção", "Playlist"][n - 1]}
                 </button>
               </li>
@@ -140,7 +168,8 @@ export default function Home() {
 
       {notice && <div className="toast mono" role="status">{notice}</div>}
 
-      {hydrated && state.step === 1 && (
+      {hydrated && onHistory && user && <HistoryPage onOpenLineup={openLineup} onNewPoster={restart} onAuthRequired={onAuthRequired} />}
+      {hydrated && !onHistory && state.step === 1 && (
         <UploadStep
           user={user}
           authMode={authMode}
@@ -148,10 +177,11 @@ export default function Home() {
           onSignedIn={() => setUser(currentUser())}
           onAuthRequired={onAuthRequired}
           onLineup={openLineup}
+          onOpenHistory={openHistory}
         />
       )}
-      {hydrated && state.step === 2 && state.lineup && <SelectStep state={state} update={update} onNext={() => goto(3)} />}
-      {hydrated && state.step === 3 && state.lineup && (
+      {hydrated && !onHistory && state.step === 2 && state.lineup && <SelectStep state={state} update={update} onNext={() => goto(3)} />}
+      {hydrated && !onHistory && state.step === 3 && state.lineup && (
         <PlaylistStep state={state} update={update} onBack={() => goto(2)} onRestart={restart} onAuthRequired={onAuthRequired} />
       )}
     </main>

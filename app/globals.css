@@ -527,3 +527,59 @@ kbd {
   .dock .seg button { white-space: nowrap; flex: none; }
   .list .daybreak h3 { font-size: 26px; }
 }
+
+/* ---------- History page ---------- */
+.btn.small[aria-pressed="true"] { background: var(--ink); color: var(--paper); opacity: 1; cursor: default; }
+.history-page { padding: 36px 0 60px; }
+.history-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 20px; flex-wrap: wrap; border-bottom: 2px solid var(--ink); padding-bottom: 18px; }
+.history-head h2 { margin: 0; font-size: clamp(54px, 8vw, 104px); }
+.history-stats { margin: 22px 0 28px; }
+.history-loading { margin: 60px auto; justify-content: center; }
+.history-empty { text-align: center; padding: 70px 20px; border: 2px dashed var(--ink); margin-top: 28px; }
+.history-empty .display { font-size: 48px; }
+.history-empty p { margin: 10px 0 22px; }
+
+.tickets { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 16px; }
+.ticket {
+  position: relative; display: grid; grid-template-columns: minmax(0, 1fr) auto;
+  background: var(--paper); border: 2px solid var(--ink); border-radius: 8px; box-shadow: var(--shadow);
+}
+.ticket.failed { opacity: 0.6; box-shadow: none; }
+.ticket-main { padding: 16px 20px; min-width: 0; }
+.ticket-date { font-size: 11px; text-transform: uppercase; color: var(--pink); }
+.ticket-title { font-size: clamp(30px, 4vw, 44px); line-height: 0.95; margin: 4px 0 6px; word-break: break-word; }
+.ticket-title span { color: var(--blue); }
+.ticket-meta { font-size: 12px; text-transform: uppercase; color: var(--ink-soft); }
+.ticket-stub {
+  position: relative; display: flex; align-items: center; justify-content: center; padding: 16px 22px;
+  border-left: 2px dashed var(--ink);
+  background: radial-gradient(circle, rgba(255, 74, 162, 0.25) 0 1.4px, transparent 1.8px) 0 0 / 8px 8px;
+}
+/* punched notches where the stub tears off */
+.ticket-stub::before, .ticket-stub::after {
+  content: ""; position: absolute; left: -11px; width: 20px; height: 20px; border-radius: 50%;
+  background: var(--paper-deep); border: 2px solid var(--ink);
+}
+.ticket-stub::before { top: -11px; clip-path: inset(50% 0 0 0); }
+.ticket-stub::after { bottom: -11px; clip-path: inset(0 0 50% 0); }
+.ticket-stub > .mono { font-size: 12px; text-transform: uppercase; color: #b0135f; }
+
+.ticket-playlists { list-style: none; margin: 12px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.ticket-playlists li {
+  display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap;
+  padding: 8px 10px; border: 1.5px solid var(--hair); border-radius: var(--radius); background: rgba(255, 255, 255, 0.35);
+}
+.ticket-playlists li::before { content: "♫"; color: var(--pink); }
+.pl-name { font-weight: 600; }
+.pl-meta { font-size: 11px; text-transform: uppercase; color: var(--ink-soft); }
+.ticket-playlists .linkish { margin-left: auto; }
+.orphans { margin-top: 32px; }
+.orphans h3 { font-size: 32px; margin: 0 0 8px; }
+
+@media (max-width: 860px) {
+  .ticket { grid-template-columns: minmax(0, 1fr); }
+  .ticket-stub { border-left: 0; border-top: 2px dashed var(--ink); justify-content: flex-start; padding: 12px 20px; }
+  .ticket-stub::before, .ticket-stub::after { display: none; }
+  .ticket-playlists .linkish { margin-left: 0; }
+  .history-stats b { font-size: 40px; }
+}

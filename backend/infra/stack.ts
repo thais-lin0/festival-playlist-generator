@@ -296,6 +296,7 @@ function handler(event) {
     route(apigw.HttpMethod.POST, "/spotify/authorize");
     route(apigw.HttpMethod.DELETE, "/spotify/connection");
     route(apigw.HttpMethod.POST, "/playlists");
+    route(apigw.HttpMethod.GET, "/playlists");
     route(apigw.HttpMethod.GET, "/playlists/{id}");
 
     const apiUrl = httpApi.apiEndpoint;
