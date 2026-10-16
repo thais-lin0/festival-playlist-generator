@@ -1,11 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { AuthMode } from "@/components/AuthCard";
 import { UploadStep } from "@/components/UploadStep";
 import { SelectStep } from "@/components/SelectStep";
 import { PlaylistStep } from "@/components/PlaylistStep";
 import { api } from "@/lib/api";
-import { currentUser, logout, startLogin, type AuthUser } from "@/lib/auth";
+import { currentUser, logout, type AuthUser } from "@/lib/auth";
 import { clearState, initialState, loadState, saveState, selectionOf, stateForLineup, type AppState } from "@/lib/state";
 import type { Lineup } from "@/lib/types";
 
@@ -19,6 +20,7 @@ export default function Home() {
   const [state, setState] = useState<AppState>(initialState);
   const [hydrated, setHydrated] = useState(false);
   const [user, setUser] = useState<AuthUser | null>(null);
+  const [authMode, setAuthMode] = useState<AuthMode>("signin");
   const [notice, setNotice] = useState<string | null>(null);
 
   useEffect(() => {
@@ -37,11 +39,17 @@ export default function Home() {
     if (hydrated) saveState(state);
   }, [state, hydrated]);
 
+  useEffect(() => {
+    if (!notice) return;
+    const t = setTimeout(() => setNotice(null), 5000);
+    return () => clearTimeout(t);
+  }, [notice]);
+
   // Persist the selection (artists picked, ♥/✦, playlist options) to DynamoDB.
   const selectionJson = state.lineup ? JSON.stringify(selectionOf(state)) : null;
   const lastSaved = useRef<string | null>(null);
   useEffect(() => {
-    if (!hydrated || !state.lineup || !selectionJson || selectionJson === lastSaved.current) return;
+    if (!hydrated || !user || !state.lineup || !selectionJson || selectionJson === lastSaved.current) return;
     const id = state.lineup.id;
     const t = setTimeout(() => {
       lastSaved.current = selectionJson;
@@ -50,7 +58,7 @@ export default function Home() {
       });
     }, 800);
     return () => clearTimeout(t);
-  }, [selectionJson, hydrated, state.lineup]);
+  }, [selectionJson, hydrated, user, state.lineup]);
 
   const update = useCallback((patch: Partial<AppState>) => setState((s) => ({ ...s, ...patch })), []);
 
@@ -58,6 +66,13 @@ export default function Home() {
     lastSaved.current = JSON.stringify(lineup.selection);
     setState(stateForLineup(lineup));
     window.scrollTo({ top: 0 });
+  }, []);
+
+  // Session expired or revoked: back to the start, where the login form lives.
+  const onAuthRequired = useCallback(() => {
+    setUser(null);
+    setAuthMode("signin");
+    setState((s) => ({ ...s, step: 1 }));
   }, []);
 
   const restart = () => {
@@ -71,41 +86,63 @@ export default function Home() {
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
+  const showAuth = (mode: AuthMode) => {
+    setAuthMode(mode);
+    if (state.step !== 1) update({ step: 1 });
+  };
+
+  async function signOut() {
+    await logout();
+    clearState();
+    setState(initialState);
+    setUser(null);
+    setAuthMode("signin");
+  }
+
   const stepState = (n: number) => (state.step === n ? "current" : state.step > n ? "done" : "todo");
 
   return (
-    <main className="shell">
+    <main className={`shell ${state.step === 1 ? "onepage" : ""}`}>
       <header className="masthead">
-        <button className="wordmark display" onClick={restart} style={{ background: "none", border: 0, padding: 0 }}>
+        <button className="wordmark display" onClick={restart}>
           Line-up <span className="arrow">→</span> Playlist
         </button>
-        <ol className="steps" aria-label="Etapas">
-          <li data-state={stepState(1)}>01 Cartaz</li>
-          <li data-state={stepState(2)}>02 Seleção</li>
-          <li data-state={stepState(3)}>03 Playlist</li>
-        </ol>
+        <div className="mast-right">
+          <ol className="steps" aria-label="Etapas">
+            <li data-state={stepState(1)}>01 Cartaz</li>
+            <li data-state={stepState(2)}>02 Seleção</li>
+            <li data-state={stepState(3)}>03 Playlist</li>
+          </ol>
+          {hydrated &&
+            (user ? (
+              <span className="who-am-i mono">
+                {user.email} · <button className="linkish" onClick={signOut}>sair</button>
+              </span>
+            ) : (
+              <span className="who-am-i mono">
+                <button className="linkish" onClick={() => showAuth("signin")}>entrar</button> ·{" "}
+                <button className="linkish" onClick={() => showAuth("signup")}>criar conta</button>
+              </span>
+            ))}
+        </div>
       </header>
 
-      <div className="statusline">
-        {user ? (
-          <>
-            <span className="tag on">{user.email}</span>
-            <button className="linkish" onClick={() => logout()}>sair</button>
-          </>
-        ) : (
-          hydrated && (
-            <>
-              <button className="linkish" onClick={() => startLogin("login")}>entrar</button>
-              <button className="linkish" onClick={() => startLogin("signup")}>criar conta</button>
-            </>
-          )
-        )}
-        {notice && <span className="tag">{notice}</span>}
-      </div>
+      {notice && <div className="toast mono" role="status">{notice}</div>}
 
-      {hydrated && state.step === 1 && <UploadStep user={user} onLineup={openLineup} />}
+      {hydrated && state.step === 1 && (
+        <UploadStep
+          user={user}
+          authMode={authMode}
+          onAuthMode={setAuthMode}
+          onSignedIn={() => setUser(currentUser())}
+          onAuthRequired={onAuthRequired}
+          onLineup={openLineup}
+        />
+      )}
       {hydrated && state.step === 2 && state.lineup && <SelectStep state={state} update={update} onNext={() => goto(3)} onBack={restart} />}
-      {hydrated && state.step === 3 && state.lineup && <PlaylistStep state={state} update={update} onBack={() => goto(2)} onRestart={restart} />}
+      {hydrated && state.step === 3 && state.lineup && (
+        <PlaylistStep state={state} update={update} onBack={() => goto(2)} onRestart={restart} onAuthRequired={onAuthRequired} />
+      )}
     </main>
   );
 }

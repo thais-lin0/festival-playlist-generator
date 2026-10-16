@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { api, AuthRequiredError, sleep } from "@/lib/api";
-import { startLogin } from "@/lib/auth";
 import { includedArtists, type AppState } from "@/lib/state";
 import type { PlaylistJob, PlaylistRequest, PlaylistResult, SpotifyStatus } from "@/lib/types";
 
@@ -14,9 +13,10 @@ interface Props {
   update: (patch: Partial<AppState>) => void;
   onBack: () => void;
   onRestart: () => void;
+  onAuthRequired: () => void;
 }
 
-export function PlaylistStep({ state, update, onBack, onRestart }: Props) {
+export function PlaylistStep({ state, update, onBack, onRestart, onAuthRequired }: Props) {
   const [status, setStatus] = useState<SpotifyStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [connecting, setConnecting] = useState(false);
@@ -26,9 +26,9 @@ export function PlaylistStep({ state, update, onBack, onRestart }: Props) {
   const running = job?.status === "QUEUED" || job?.status === "RUNNING";
 
   const handle = useCallback((e: unknown) => {
-    if (e instanceof AuthRequiredError) return void startLogin();
+    if (e instanceof AuthRequiredError) return onAuthRequired();
     setError(e instanceof Error ? e.message : "Algo deu errado.");
-  }, []);
+  }, [onAuthRequired]);
 
   const refreshStatus = useCallback(() => {
     api<SpotifyStatus>("/spotify/status").then(setStatus).catch(handle);

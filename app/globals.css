@@ -82,7 +82,7 @@ button { cursor: pointer; }
   border-bottom: 2px solid var(--ink);
   flex-wrap: wrap;
 }
-.wordmark { display: flex; align-items: baseline; gap: 8px; font-size: 30px; }
+.wordmark { display: flex; align-items: baseline; gap: 8px; font-size: 30px; background: none; border: 0; padding: 0; cursor: pointer; }
 .wordmark .arrow { color: var(--pink); }
 .wordmark small { font-size: 11px; color: var(--ink-soft); text-transform: uppercase; }
 
@@ -141,12 +141,6 @@ button { cursor: pointer; }
 .linkish { background: none; border: 0; padding: 0; text-decoration: underline; text-underline-offset: 3px; font-family: var(--font-mono), monospace; font-size: 13px; }
 
 /* ---------- Step 1: Upload ---------- */
-.hero { display: grid; grid-template-columns: 1.15fr 1fr; gap: 40px; padding: 48px 0 24px; align-items: start; }
-.hero h1 { font-size: clamp(64px, 10vw, 148px); margin: 0; }
-.hero h1 span { display: block; }
-.hero h1 .pink { color: var(--pink); text-shadow: 3px 2px 0 var(--ink); }
-.hero .lede { max-width: 46ch; font-size: 18px; margin: 24px 0 0; }
-.hero .ticketline { margin-top: 28px; display: flex; gap: 18px; flex-wrap: wrap; font-size: 12px; text-transform: uppercase; color: var(--ink-soft); }
 
 .drop {
   position: relative;
@@ -167,7 +161,7 @@ button { cursor: pointer; }
 }
 .drop.over { transform: rotate(-0.5deg) scale(1.015); background-color: #ffe6f2; }
 .drop .big { font-size: 54px; }
-.drop input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+.drop > input[type="file"] { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
 .drop .tape {
   position: absolute; width: 120px; height: 30px; background: rgba(255, 210, 58, 0.75);
   top: -8px; left: 50%; transform: translateX(-50%) rotate(-3deg);
@@ -185,10 +179,6 @@ button { cursor: pointer; }
 
 .error { margin-top: 16px; padding: 12px 14px; border: 2px solid var(--pink); background: #ffe3f0; font-family: var(--font-mono), monospace; font-size: 13px; }
 
-.how { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0; margin-top: 56px; border-top: 2px solid var(--ink); }
-.how div { padding: 18px 18px 0 0; }
-.how b { display: block; font-family: var(--font-display); font-size: 34px; text-transform: uppercase; }
-.how .n { font-family: var(--font-mono); font-size: 12px; color: var(--pink); }
 
 /* ---------- Step 2: Selection ---------- */
 .fest-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 24px; padding: 40px 0 18px; border-bottom: 2px solid var(--ink); flex-wrap: wrap; }
@@ -354,12 +344,11 @@ button { cursor: pointer; }
 .back { margin: 24px 0 0; }
 
 @media (max-width: 860px) {
-  .hero, .final { grid-template-columns: 1fr; }
+  .final { grid-template-columns: 1fr; }
   .drop { min-height: 320px; transform: none; }
   .modes { grid-template-columns: 1fr 1fr; }
   .mode:nth-child(2) { border-right: 0; }
   .mode:nth-child(-n + 2) { border-bottom: 2px solid var(--ink); }
-  .how { grid-template-columns: 1fr; }
   .dock { grid-template-columns: 1fr auto; }
   .dock .opts { grid-column: 1 / -1; grid-row: 2; border-left: 0; padding-left: 0; }
   .card.headliner { grid-column: span 1; }
@@ -369,17 +358,96 @@ button { cursor: pointer; }
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .reveal, .dock { animation: none !important; opacity: 1; transform: none; }
   *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition: none !important; }
 }
 
-/* Saved line-ups */
-.history { margin-top: 40px; }
-.history h2 { font-size: 44px; margin: 0 0 12px; }
-.history ul { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; }
-.history button {
-  width: 100%; text-align: left; border: 2px solid var(--ink); background: var(--paper); padding: 12px 14px; border-radius: var(--radius);
-  display: flex; flex-direction: column; gap: 4px; transition: transform 0.15s var(--ease), box-shadow 0.15s;
+/* ---------- Masthead extras ---------- */
+.mast-right { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+.who-am-i { font-size: 12px; }
+.toast {
+  position: fixed; top: 16px; left: 50%; transform: translateX(-50%); z-index: 30;
+  background: var(--ink); color: var(--paper); padding: 8px 16px; border-radius: 999px; font-size: 12px;
+  box-shadow: 3px 3px 0 var(--pink); animation: toastIn 0.4s var(--ease) both;
 }
-.history button:hover { transform: translate(-2px, -2px); box-shadow: 4px 4px 0 var(--blue); }
-.history b { font-family: var(--font-display); font-size: 26px; text-transform: uppercase; line-height: 1; }
-.history .mono { font-size: 11px; color: var(--ink-soft); text-transform: uppercase; }
+@keyframes toastIn { from { opacity: 0; transform: translate(-50%, -12px); } }
+
+/* ---------- Step 1: one page, no scroll ---------- */
+.onepage { height: 100vh; height: 100dvh; display: flex; flex-direction: column; padding-bottom: 20px; overflow: hidden; }
+.stage {
+  flex: 1; min-height: 0;
+  display: grid; grid-template-columns: 1.1fr 1fr; gap: clamp(20px, 4vw, 56px);
+  padding-top: clamp(14px, 3vh, 36px);
+}
+.stage-copy { display: flex; flex-direction: column; justify-content: center; min-height: 0; }
+.stage h1 { font-size: min(9.5vw, 14vh); margin: 0; }
+.stage h1 span { display: block; }
+.stage h1 .pink { color: var(--pink); text-shadow: 3px 2px 0 var(--ink); }
+.stage .lede { font-size: clamp(14px, 2.1vh, 18px); max-width: 44ch; margin: 2.6vh 0 0; }
+.how-strip { list-style: none; display: flex; gap: 8px 20px; flex-wrap: wrap; margin: 2.4vh 0 0; padding: 0; font-size: 12px; text-transform: uppercase; color: var(--ink-soft); }
+.how-strip b { color: var(--pink); font-weight: 400; margin-right: 4px; }
+.recent { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 2.2vh; }
+.recent > .mono { font-size: 11px; text-transform: uppercase; color: var(--ink-soft); }
+
+.stage-card { display: flex; flex-direction: column; gap: 10px; min-height: 0; padding: 8px 10px 10px 4px; }
+.stage-card .drop { flex: 1; min-height: 0; }
+.stage-card .error { margin-top: 0; }
+.demo-link { position: relative; z-index: 2; margin-top: 6px; }
+
+/* ---------- Login card ---------- */
+.auth-frame { cursor: default; }
+.auth {
+  position: relative; width: min(360px, 100%);
+  display: flex; flex-direction: column; gap: 12px; text-align: left;
+  background: var(--paper); border: 2px solid var(--ink); padding: 18px; box-shadow: 4px 4px 0 var(--blue);
+}
+.auth-tabs { display: grid; grid-template-columns: 1fr 1fr; border: 2px solid var(--ink); }
+.auth-tabs button {
+  border: 0; background: transparent; padding: 8px; font-family: var(--font-display); font-weight: 900; font-size: 20px; text-transform: uppercase;
+}
+.auth-tabs button[aria-selected="true"] { background: var(--ink); color: var(--paper); }
+.auth-title { font-size: 30px; line-height: 1; }
+.auth label { display: flex; flex-direction: column; gap: 4px; }
+.auth label > span { font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; color: var(--ink-soft); }
+.auth input { padding: 10px 12px; border: 2px solid var(--ink); border-radius: var(--radius); background: #fffdf7; font-size: 16px; }
+.auth input:focus { outline: none; box-shadow: 3px 3px 0 var(--pink); }
+.auth small { font-family: var(--font-mono); font-size: 11px; color: var(--ink-soft); }
+.auth .btn { width: 100%; font-size: 20px; padding: 11px; }
+.auth-error { border: 2px solid var(--pink); background: #ffe3f0; padding: 8px 10px; font-size: 13px; }
+.auth-info { margin: 0; font-size: 13px; }
+.auth-links { display: flex; justify-content: space-between; min-height: 18px; }
+
+@media (max-width: 860px) {
+  .onepage .steps { display: none; }
+  .stage { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); gap: 14px; }
+  .stage h1 { font-size: min(10.5vw, 6.5vh); }
+  .stage .lede { font-size: 14px; }
+  .who-am-i { font-size: 11px; }
+  .masthead { padding: 12px 0; }
+  .wordmark { font-size: 24px; }
+  .stage h1 span { display: inline; }
+  .stage h1 span::after { content: " "; }
+  .stage .lede { margin-top: 1.4vh; }
+  .how-strip, .recent { display: none; }
+  .stage-card .drop { min-height: 0; transform: none; }
+}
+@media (max-height: 640px) and (min-width: 861px) {
+  .how-strip { display: none; }
+}
+@media (max-width: 860px) and (max-height: 720px) {
+  .stage .lede { display: none; }
+  .stage-card .drop { padding: 12px; }
+  .auth { gap: 8px; padding: 12px; }
+  .auth input { padding: 8px 10px; }
+  .auth-tabs button { font-size: 17px; padding: 6px; white-space: nowrap; }
+  .auth .btn { padding: 9px; font-size: 18px; }
+}
+
+.password-field { position: relative; display: flex; }
+.password-field input { flex: 1; min-width: 0; padding-right: 84px; }
+.reveal-password {
+  position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
+  border: 1.5px solid var(--ink); border-radius: 999px; background: var(--paper);
+  font-size: 11px; text-transform: uppercase; padding: 3px 9px;
+}
+.reveal-password[aria-pressed="true"] { background: var(--ink); color: var(--paper); }

@@ -121,5 +121,4 @@ export interface AppConfig {
   apiUrl: string;
   userPoolId: string;
   userPoolClientId: string;
-  authDomain: string;
 }

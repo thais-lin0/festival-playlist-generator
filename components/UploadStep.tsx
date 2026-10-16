@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { AuthCard, type AuthMode } from "@/components/AuthCard";
 import { api, AuthRequiredError, sleep } from "@/lib/api";
-import { startLogin, type AuthUser } from "@/lib/auth";
+import type { AuthUser } from "@/lib/auth";
 import { MAX_UPLOAD_BYTES, preparePoster } from "@/lib/client-image";
 import type { CreateLineupResponse, Lineup, LineupSummary } from "@/lib/types";
 
@@ -17,7 +18,16 @@ function phaseOf(lineup: Lineup): number {
   return PHASES.length;
 }
 
-export function UploadStep({ user, onLineup }: { user: AuthUser | null; onLineup: (lineup: Lineup) => void }) {
+interface Props {
+  user: AuthUser | null;
+  authMode: AuthMode;
+  onAuthMode: (mode: AuthMode) => void;
+  onSignedIn: () => void;
+  onAuthRequired: () => void;
+  onLineup: (lineup: Lineup) => void;
+}
+
+export function UploadStep({ user, authMode, onAuthMode, onSignedIn, onAuthRequired, onLineup }: Props) {
   const [over, setOver] = useState(false);
   const [busy, setBusy] = useState(false);
   const [phase, setPhase] = useState(0);
@@ -26,11 +36,11 @@ export function UploadStep({ user, onLineup }: { user: AuthUser | null; onLineup
   const [history, setHistory] = useState<LineupSummary[]>([]);
 
   useEffect(() => {
-    if (!user) return;
+    if (!user) return setHistory([]);
     api<{ lineups: LineupSummary[] }>("/lineups")
       .then((d) => setHistory(d.lineups.filter((l) => l.status === "READY")))
-      .catch(() => {});
-  }, [user]);
+      .catch((e) => e instanceof AuthRequiredError && onAuthRequired());
+  }, [user, onAuthRequired]);
 
   async function run(task: () => Promise<Lineup>) {
     setBusy(true);
@@ -39,7 +49,7 @@ export function UploadStep({ user, onLineup }: { user: AuthUser | null; onLineup
     try {
       onLineup(await task());
     } catch (e) {
-      if (e instanceof AuthRequiredError) return startLogin();
+      if (e instanceof AuthRequiredError) return onAuthRequired();
       setError(e instanceof Error ? e.message : "Falha ao ler o cartaz.");
       setPreview(null);
     } finally {
@@ -60,8 +70,7 @@ export function UploadStep({ user, onLineup }: { user: AuthUser | null; onLineup
   }
 
   async function handleFile(file: File | undefined) {
-    if (!file || busy) return;
-    if (!user) return startLogin();
+    if (!file || busy || !user) return;
     if (!file.type.startsWith("image/")) {
       setError("Envie uma imagem (PNG, JPG ou WEBP).");
       return;
@@ -81,36 +90,45 @@ export function UploadStep({ user, onLineup }: { user: AuthUser | null; onLineup
     });
   }
 
-  function useDemo() {
-    if (!user) return startLogin();
-    run(async () => (await api<CreateLineupResponse>("/lineups", { method: "POST", body: JSON.stringify({ demo: true }) })).lineup);
-  }
-
-  function openSaved(id: string) {
-    run(() => api<Lineup>(`/lineups/${id}`));
-  }
+  const useDemo = () => run(async () => (await api<CreateLineupResponse>("/lineups", { method: "POST", body: JSON.stringify({ demo: true }) })).lineup);
+  const openSaved = (id: string) => run(() => api<Lineup>(`/lineups/${id}`));
 
   return (
-    <>
-      <section className="hero">
-        <div>
-          <h1 className="display misreg">
-            <span className="reveal" style={{ ["--i" as string]: 0 }}>Envie o</span>
-            <span className="reveal pink" style={{ ["--i" as string]: 1 }}>line-up.</span>
-            <span className="reveal" style={{ ["--i" as string]: 2 }}>Ganhe a</span>
-            <span className="reveal" style={{ ["--i" as string]: 3 }}>playlist.</span>
-          </h1>
-          <p className="lede reveal" style={{ ["--i" as string]: 4 }}>
-            Mande a foto do cartaz do festival. A gente lê os nomes, você escolhe quem quer ouvir, e a playlist aparece pronta na sua conta do Spotify.
-          </p>
-          <div className="ticketline mono reveal" style={{ ["--i" as string]: 5 }}>
-            <span>★ Filtros por dia e gênero</span>
-            <span>★ 3, 5 ou 10 músicas por artista</span>
-            <span>★ Suas seleções ficam salvas</span>
+    <section className="stage">
+      <div className="stage-copy">
+        <h1 className="display misreg">
+          <span className="reveal" style={{ ["--i" as string]: 0 }}>Envie o</span>
+          <span className="reveal pink" style={{ ["--i" as string]: 1 }}>line-up.</span>
+          <span className="reveal" style={{ ["--i" as string]: 2 }}>Ganhe a</span>
+          <span className="reveal" style={{ ["--i" as string]: 3 }}>playlist.</span>
+        </h1>
+        <p className="lede reveal" style={{ ["--i" as string]: 4 }}>
+          Mande a foto do cartaz do festival. A gente lê os nomes, você escolhe quem quer ouvir, e a playlist aparece no seu Spotify.
+        </p>
+        <ol className="how-strip mono reveal" style={{ ["--i" as string]: 5 }}>
+          <li><b>01</b> Envie o cartaz</li>
+          <li><b>02</b> Escolha os artistas</li>
+          <li><b>03</b> Ouça no Spotify</li>
+        </ol>
+        {history.length > 0 && !busy && (
+          <div className="recent reveal" style={{ ["--i" as string]: 6 }}>
+            <span className="mono">Recentes</span>
+            {history.slice(0, 3).map((l) => (
+              <button key={l.id} className="chip" onClick={() => openSaved(l.id)} title={`${l.artistCount} artistas`}>
+                {[l.festival ?? "Sem nome", l.edition].filter(Boolean).join(" ")}
+              </button>
+            ))}
           </div>
-        </div>
+        )}
+      </div>
 
-        <div className="reveal" style={{ ["--i" as string]: 3 }}>
+      <div className="stage-card reveal" style={{ ["--i" as string]: 3 }}>
+        {!user ? (
+          <div className="drop auth-frame">
+            <span className="tape" aria-hidden />
+            <AuthCard mode={authMode} onMode={onAuthMode} onSignedIn={onSignedIn} />
+          </div>
+        ) : (
           <div
             className={`drop ${over ? "over" : ""}`}
             onDragOver={(e) => {
@@ -139,65 +157,20 @@ export function UploadStep({ user, onLineup }: { user: AuthUser | null; onLineup
                   </ul>
                 </div>
               </>
-            ) : user ? (
+            ) : (
               <>
                 <div className="display big">Solte o cartaz aqui</div>
                 <div className="mono" style={{ fontSize: 13 }}>ou clique para escolher · PNG, JPG, WEBP</div>
                 <input type="file" accept="image/*" aria-label="Enviar cartaz" onChange={(e) => handleFile(e.target.files?.[0])} />
-              </>
-            ) : (
-              <>
-                <div className="display big">Entre para começar</div>
-                <div className="mono" style={{ fontSize: 13 }}>Seus line-ups e seleções ficam salvos na sua conta.</div>
-                <div style={{ display: "flex", gap: 12, flexWrap: "wrap", justifyContent: "center", position: "relative" }}>
-                  <button className="btn" onClick={() => startLogin("login")}>Entrar</button>
-                  <button className="btn alt" onClick={() => startLogin("signup")}>Criar conta</button>
-                </div>
+                <button className="linkish demo-link" onClick={useDemo}>
+                  sem cartaz à mão? testar com um line-up de exemplo →
+                </button>
               </>
             )}
           </div>
-          {!busy && user && (
-            <p style={{ textAlign: "center", marginTop: 22 }}>
-              <button className="linkish" onClick={useDemo}>
-                Sem cartaz à mão? Testar com um line-up de exemplo →
-              </button>
-            </p>
-          )}
-          {error && <div className="error">{error}</div>}
-        </div>
-      </section>
-
-      {history.length > 0 && !busy && (
-        <section className="history reveal" style={{ ["--i" as string]: 6 }}>
-          <h2 className="display">Seus line-ups</h2>
-          <ul>
-            {history.slice(0, 6).map((l) => (
-              <li key={l.id}>
-                <button onClick={() => openSaved(l.id)}>
-                  <b>{[l.festival ?? "Festival sem nome", l.edition].filter(Boolean).join(" ")}</b>
-                  <span className="mono">
-                    {l.artistCount} artistas · {new Date(l.createdAt).toLocaleDateString("pt-BR")}
-                  </span>
-                </button>
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
-
-      <section className="how">
-        {[
-          ["Envie", "Foto ou print do cartaz oficial."],
-          ["Escolha", "Filtre por dia, gênero ou marque quem você quer conhecer."],
-          ["Ouça", "A playlist é criada direto no seu Spotify."],
-        ].map(([t, d], i) => (
-          <div key={t} className="reveal" style={{ ["--i" as string]: 6 + i }}>
-            <span className="n">0{i + 1}</span>
-            <b>{t}</b>
-            <p>{d}</p>
-          </div>
-        ))}
-      </section>
-    </>
+        )}
+        {error && <div className="error">{error}</div>}
+      </div>
+    </section>
   );
 }

@@ -137,7 +137,7 @@ function handler(event) {
       signInAliases: { email: true },
       autoVerify: { email: true },
       standardAttributes: { email: { required: true, mutable: true } },
-      passwordPolicy: { minLength: 8, requireLowercase: true, requireDigits: true, requireUppercase: false, requireSymbols: false },
+      passwordPolicy: { minLength: 8, requireLowercase: false, requireDigits: false, requireUppercase: false, requireSymbols: false },
       accountRecovery: cognito.AccountRecovery.EMAIL_ONLY,
       featurePlan: cognito.FeaturePlan.ESSENTIALS,
       userVerification: {
@@ -148,31 +148,16 @@ function handler(event) {
       removalPolicy,
     });
 
-    const domain = userPool.addDomain("Domain", {
-      cognitoDomain: { domainPrefix: `${prefix}-${this.account}` },
-      managedLoginVersion: cognito.ManagedLoginVersion.NEWER_MANAGED_LOGIN,
-    });
-
     const webClient = userPool.addClient("WebClient", {
       userPoolClientName: name("web"),
       generateSecret: false,
       preventUserExistenceErrors: true,
-      supportedIdentityProviders: [cognito.UserPoolClientIdentityProvider.COGNITO],
-      oAuth: {
-        flows: { authorizationCodeGrant: true },
-        scopes: [cognito.OAuthScope.OPENID, cognito.OAuthScope.EMAIL, cognito.OAuthScope.PROFILE],
-        callbackUrls: allowedOrigins.map((o) => `${o}/auth/callback/`),
-        logoutUrls: allowedOrigins.map((o) => `${o}/`),
-      },
+      // The site has its own login form and calls the user pool API directly.
+      authFlows: { userPassword: true },
+      disableOAuth: true,
       accessTokenValidity: cdk.Duration.hours(1),
       idTokenValidity: cdk.Duration.hours(1),
       refreshTokenValidity: cdk.Duration.days(30),
-    });
-
-    new cognito.CfnManagedLoginBranding(this, "LoginBranding", {
-      userPoolId: userPool.userPoolId,
-      clientId: webClient.userPoolClientId,
-      useCognitoProvidedValues: true,
     });
 
     // ---------------- Lambdas ----------------
@@ -317,7 +302,6 @@ function handler(event) {
 
     // ---------------- Front-end deployment ----------------
 
-    const authDomain = `${prefix}-${this.account}.auth.${this.region}.amazoncognito.com`;
     if (existsSync(WEB_OUT)) {
       const site = new s3deploy.BucketDeployment(this, "DeploySite", {
         sources: [s3deploy.Source.asset(WEB_OUT)],
@@ -334,7 +318,6 @@ function handler(event) {
             apiUrl,
             userPoolId: userPool.userPoolId,
             userPoolClientId: webClient.userPoolClientId,
-            authDomain,
           }),
         ],
         destinationBucket: webBucket,
@@ -344,7 +327,6 @@ function handler(event) {
         distributionPaths: ["/config.json"],
       });
       config.node.addDependency(site);
-      config.node.addDependency(domain);
     } else {
       cdk.Annotations.of(this).addWarning(`Front-end build not found at ${WEB_OUT}; run "npm run build" in the repo root before deploying.`);
     }
@@ -427,7 +409,6 @@ function handler(event) {
     out("SpotifySecretName", spotifySecret.secretName, "Secrets Manager secret holding the Spotify credentials");
     out("UserPoolId", userPool.userPoolId, "Cognito user pool");
     out("UserPoolClientId", webClient.userPoolClientId, "Cognito app client (web)");
-    out("AuthDomain", authDomain, "Cognito managed login domain");
     out("TableName", table.tableName, "DynamoDB table");
     out("DashboardUrl", `https://${this.region}.console.aws.amazon.com/cloudwatch/home?region=${this.region}#dashboards/dashboard/${name("overview")}`, "CloudWatch dashboard");
   }

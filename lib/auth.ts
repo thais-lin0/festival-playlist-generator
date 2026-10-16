@@ -1,8 +1,8 @@
 import { getConfig } from "./config";
 
-// Cognito managed login, authorization code + PKCE, no client secret (public SPA client).
-const SESSION_KEY = "fpg_auth_v1";
-const PENDING_KEY = "fpg_auth_pending";
+// Our own login form talking straight to the Cognito user pool API (no hosted UI).
+// The password goes over TLS to Cognito only, never to our back-end.
+const SESSION_KEY = "fpg_auth_v2";
 
 interface Session {
   idToken: string;
@@ -15,121 +15,141 @@ export interface AuthUser {
   email: string;
 }
 
-const redirectUri = () => `${window.location.origin}/auth/callback/`;
-
-function read<T>(storage: Storage, key: string): T | null {
-  try {
-    const raw = storage.getItem(key);
-    return raw ? (JSON.parse(raw) as T) : null;
-  } catch {
-    return null;
+export class AuthError extends Error {
+  constructor(public code: string, message: string) {
+    super(message);
   }
 }
 
-function write(storage: Storage, key: string, value: unknown | null) {
-  try {
-    if (value === null) storage.removeItem(key);
-    else storage.setItem(key, JSON.stringify(value));
-  } catch {
-    /* storage blocked: the user will just need to sign in again */
-  }
-}
+const MESSAGES: Record<string, string> = {
+  NotAuthorizedException: "E-mail ou senha incorretos.",
+  UserNotFoundException: "E-mail ou senha incorretos.",
+  UsernameExistsException: "Já existe uma conta com este e-mail. Tente entrar.",
+  InvalidPasswordException: "A senha precisa ter pelo menos 8 caracteres.",
+  InvalidParameterException: "Confira o e-mail e a senha.",
+  CodeMismatchException: "Código incorreto. Confira o e-mail e tente de novo.",
+  ExpiredCodeException: "Este código expirou. Peça um novo.",
+  LimitExceededException: "Muitas tentativas. Aguarde alguns minutos.",
+  TooManyRequestsException: "Muitas tentativas. Aguarde alguns minutos.",
+  TooManyFailedAttemptsException: "Muitas tentativas. Aguarde alguns minutos.",
+  CodeDeliveryFailureException: "Não conseguimos enviar o código. Tente novamente.",
+};
 
-const b64url = (bytes: ArrayBuffer | Uint8Array) =>
-  btoa(String.fromCharCode(...new Uint8Array(bytes))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-
-function randomString(bytes = 32): string {
-  return b64url(crypto.getRandomValues(new Uint8Array(bytes)));
-}
-
-function decodeJwt(token: string): Record<string, unknown> {
-  const part = token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
-  return JSON.parse(decodeURIComponent(escape(atob(part))));
-}
-
-export async function startLogin(mode: "login" | "signup" = "login"): Promise<void> {
+async function cognito<T>(action: string, body: Record<string, unknown>): Promise<T> {
   const cfg = await getConfig();
-  const verifier = randomString(48);
-  const state = randomString(16);
-  const challenge = b64url(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier)));
-  write(sessionStorage, PENDING_KEY, { verifier, state });
-  const params = new URLSearchParams({
-    response_type: "code",
-    client_id: cfg.userPoolClientId,
-    redirect_uri: redirectUri(),
-    scope: "openid email profile",
-    state,
-    code_challenge: challenge,
-    code_challenge_method: "S256",
-    lang: "pt-BR",
-  });
-  window.location.href = `https://${cfg.authDomain}/${mode === "signup" ? "signup" : "oauth2/authorize"}?${params}`;
-}
-
-export async function completeLogin(code: string, state: string): Promise<void> {
-  const cfg = await getConfig();
-  const pending = read<{ verifier: string; state: string }>(sessionStorage, PENDING_KEY);
-  write(sessionStorage, PENDING_KEY, null);
-  if (!pending || pending.state !== state) throw new Error("Sessão de login inválida. Tente entrar novamente.");
-  const res = await fetch(`https://${cfg.authDomain}/oauth2/token`, {
+  const res = await fetch(`https://cognito-idp.${cfg.region}.amazonaws.com/`, {
     method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({
-      grant_type: "authorization_code",
-      client_id: cfg.userPoolClientId,
-      code,
-      redirect_uri: redirectUri(),
-      code_verifier: pending.verifier,
-    }),
+    headers: { "Content-Type": "application/x-amz-json-1.1", "X-Amz-Target": `AWSCognitoIdentityProviderService.${action}` },
+    body: JSON.stringify({ ClientId: cfg.userPoolClientId, ...body }),
   });
-  if (!res.ok) throw new Error("Não foi possível concluir o login.");
-  const t = await res.json();
-  write(localStorage, SESSION_KEY, {
-    idToken: t.id_token,
-    accessToken: t.access_token,
-    refreshToken: t.refresh_token,
-    expiresAt: Date.now() + t.expires_in * 1000,
-  } satisfies Session);
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const code = String(data.__type ?? "Unknown").split("#").pop()!;
+    throw new AuthError(code, MESSAGES[code] ?? "Algo deu errado. Tente novamente.");
+  }
+  return data as T;
+}
+
+interface AuthResult {
+  AuthenticationResult?: { IdToken: string; AccessToken: string; RefreshToken?: string; ExpiresIn: number };
+}
+
+function store(result: AuthResult, refreshToken?: string): void {
+  const r = result.AuthenticationResult;
+  if (!r) throw new AuthError("Unknown", "Não foi possível entrar.");
+  write({
+    idToken: r.IdToken,
+    accessToken: r.AccessToken,
+    refreshToken: r.RefreshToken ?? refreshToken ?? "",
+    expiresAt: Date.now() + r.ExpiresIn * 1000,
+  });
+}
+
+const clean = (email: string) => email.trim().toLowerCase();
+
+export async function signIn(email: string, password: string): Promise<void> {
+  store(
+    await cognito<AuthResult>("InitiateAuth", {
+      AuthFlow: "USER_PASSWORD_AUTH",
+      AuthParameters: { USERNAME: clean(email), PASSWORD: password },
+    }),
+  );
+}
+
+/** Creates the account; Cognito emails a 6-digit code that confirmSignUp checks. */
+export async function signUp(email: string, password: string): Promise<void> {
+  await cognito("SignUp", { Username: clean(email), Password: password, UserAttributes: [{ Name: "email", Value: clean(email) }] });
+}
+
+export async function confirmSignUp(email: string, code: string): Promise<void> {
+  await cognito("ConfirmSignUp", { Username: clean(email), ConfirmationCode: code.trim() });
+}
+
+export async function resendCode(email: string): Promise<void> {
+  await cognito("ResendConfirmationCode", { Username: clean(email) });
+}
+
+export async function forgotPassword(email: string): Promise<void> {
+  await cognito("ForgotPassword", { Username: clean(email) });
+}
+
+export async function resetPassword(email: string, code: string, password: string): Promise<void> {
+  await cognito("ConfirmForgotPassword", { Username: clean(email), ConfirmationCode: code.trim(), Password: password });
 }
 
 /** A valid access token, refreshing it when it's about to expire; null when signed out. */
 export async function getAccessToken(): Promise<string | null> {
-  const session = read<Session>(localStorage, SESSION_KEY);
+  const session = read();
   if (!session) return null;
   if (session.expiresAt - Date.now() > 60_000) return session.accessToken;
-  const cfg = await getConfig();
-  const res = await fetch(`https://${cfg.authDomain}/oauth2/token`, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({ grant_type: "refresh_token", client_id: cfg.userPoolClientId, refresh_token: session.refreshToken }),
-  }).catch(() => null);
-  if (!res?.ok) {
+  try {
+    store(
+      await cognito<AuthResult>("InitiateAuth", { AuthFlow: "REFRESH_TOKEN_AUTH", AuthParameters: { REFRESH_TOKEN: session.refreshToken } }),
+      session.refreshToken,
+    );
+    return read()?.accessToken ?? null;
+  } catch {
     clearSession();
     return null;
   }
-  const t = await res.json();
-  const next: Session = { ...session, idToken: t.id_token, accessToken: t.access_token, expiresAt: Date.now() + t.expires_in * 1000 };
-  write(localStorage, SESSION_KEY, next);
-  return next.accessToken;
 }
 
 export function currentUser(): AuthUser | null {
-  const session = read<Session>(localStorage, SESSION_KEY);
+  const session = read();
   if (!session) return null;
   try {
-    return { email: String(decodeJwt(session.idToken).email ?? "") };
+    const part = session.idToken.split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
+    return { email: String(JSON.parse(decodeURIComponent(escape(atob(part)))).email ?? "") };
   } catch {
     return null;
   }
 }
 
 export function clearSession(): void {
-  write(localStorage, SESSION_KEY, null);
+  try {
+    localStorage.removeItem(SESSION_KEY);
+  } catch {}
 }
 
 export async function logout(): Promise<void> {
-  const cfg = await getConfig();
+  const session = read();
   clearSession();
-  const params = new URLSearchParams({ client_id: cfg.userPoolClientId, logout_uri: `${window.location.origin}/` });
-  window.location.href = `https://${cfg.authDomain}/logout?${params}`;
+  if (session?.refreshToken) await cognito("RevokeToken", { Token: session.refreshToken }).catch(() => {});
+}
+
+function read(): Session | null {
+  try {
+    const raw = localStorage.getItem(SESSION_KEY);
+    return raw ? (JSON.parse(raw) as Session) : null;
+  } catch {
+    return null;
+  }
+}
+
+function write(session: Session): void {
+  try {
+    localStorage.setItem(SESSION_KEY, JSON.stringify(session));
+  } catch {
+    /* storage blocked: the user will need to sign in again next visit */
+  }
 }
