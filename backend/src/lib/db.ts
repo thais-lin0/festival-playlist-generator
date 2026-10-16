@@ -59,6 +59,30 @@ export async function listLineups(sub: string, limit = 50): Promise<LineupSummar
   }));
 }
 
+/** Removes the line-up and the history of playlists generated from it (not the Spotify playlists). */
+export async function deleteLineup(sub: string, id: string): Promise<number> {
+  const keys: string[] = [];
+  let start: Record<string, unknown> | undefined;
+  do {
+    const page = await doc.send(
+      new QueryCommand({
+        TableName: table(),
+        KeyConditionExpression: "PK = :pk AND begins_with(SK, :sk)",
+        FilterExpression: "#rq.lineupId = :id",
+        ExpressionAttributeValues: { ":pk": user(sub), ":sk": "JOB#", ":id": id },
+        ExpressionAttributeNames: { "#rq": "request" },
+        ProjectionExpression: "SK",
+        ExclusiveStartKey: start,
+      }),
+    );
+    keys.push(...(page.Items ?? []).map((i) => i.SK as string));
+    start = page.LastEvaluatedKey;
+  } while (start);
+  for (const sk of keys) await doc.send(new DeleteCommand({ TableName: table(), Key: { PK: user(sub), SK: sk } }));
+  await doc.send(new DeleteCommand({ TableName: table(), Key: { PK: user(sub), SK: `LINEUP#${id}` } }));
+  return keys.length;
+}
+
 // ---------- Playlist jobs ----------
 
 export async function putJob(sub: string, job: PlaylistJob, request: PlaylistRequest): Promise<void> {
@@ -97,6 +121,10 @@ export async function listJobs(sub: string, limit = 100): Promise<PlaylistSummar
     artistsRequested: (i.request?.artists ?? []).length,
     createdAt: i.createdAt,
   }));
+}
+
+export async function deleteJob(sub: string, id: string): Promise<void> {
+  await doc.send(new DeleteCommand({ TableName: table(), Key: { PK: user(sub), SK: `JOB#${id}` } }));
 }
 
 export async function updateJob(sub: string, id: string, patch: Partial<PlaylistJob>): Promise<void> {

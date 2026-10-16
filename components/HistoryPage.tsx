@@ -6,6 +6,7 @@ import type { Lineup, LineupSummary, PlaylistSummary } from "@/lib/types";
 
 interface Props {
   onOpenLineup: (lineup: Lineup) => void;
+  onLineupDeleted: (id: string) => void;
   onNewPoster: () => void;
   onAuthRequired: () => void;
 }
@@ -13,11 +14,14 @@ interface Props {
 const dateFmt = new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "short", year: "numeric" });
 const formatDate = (iso: string) => dateFmt.format(new Date(iso)).replace(".", "");
 
-export function HistoryPage({ onOpenLineup, onNewPoster, onAuthRequired }: Props) {
+export function HistoryPage({ onOpenLineup, onLineupDeleted, onNewPoster, onAuthRequired }: Props) {
   const [lineups, setLineups] = useState<LineupSummary[] | null>(null);
   const [playlists, setPlaylists] = useState<PlaylistSummary[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [opening, setOpening] = useState<string | null>(null);
+  // Inline confirmation: which line-up / playlist is asking "apagar?"
+  const [confirming, setConfirming] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState<string | null>(null);
 
   useEffect(() => {
     // Playlists are secondary: if that call fails, still show the line-ups.
@@ -43,6 +47,67 @@ export function HistoryPage({ onOpenLineup, onNewPoster, onAuthRequired }: Props
       setOpening(null);
     }
   }
+
+  async function removeLineup(id: string) {
+    setDeleting(id);
+    setError(null);
+    try {
+      await api(`/lineups/${id}`, { method: "DELETE" });
+      setLineups((ls) => (ls ?? []).filter((l) => l.id !== id));
+      setPlaylists((ps) => ps.filter((p) => p.lineupId !== id));
+      onLineupDeleted(id);
+    } catch (e) {
+      if (e instanceof AuthRequiredError) return onAuthRequired();
+      setError("Não foi possível apagar este line-up.");
+    } finally {
+      setDeleting(null);
+      setConfirming(null);
+    }
+  }
+
+  async function removePlaylist(id: string) {
+    setDeleting(id);
+    setError(null);
+    try {
+      await api(`/playlists/${id}`, { method: "DELETE" });
+      setPlaylists((ps) => ps.filter((p) => p.id !== id));
+    } catch (e) {
+      if (e instanceof AuthRequiredError) return onAuthRequired();
+      setError(e instanceof Error ? e.message : "Não foi possível remover esta playlist.");
+    } finally {
+      setDeleting(null);
+      setConfirming(null);
+    }
+  }
+
+  const playlistItem = (p: PlaylistSummary) => (
+    <li key={p.id} className={confirming === p.id ? "confirming" : ""}>
+      <span className="pl-name">{p.playlistName}</span>
+      <span className="mono pl-meta">
+        {p.tracksAdded} músicas · {formatDate(p.createdAt)}
+      </span>
+      {confirming === p.id ? (
+        <span className="pl-confirm mono">
+          tirar do histórico? (continua no Spotify){" "}
+          <button className="linkish danger" onClick={() => removePlaylist(p.id)} disabled={deleting !== null}>
+            {deleting === p.id ? "removendo…" : "sim"}
+          </button>{" "}
+          · <button className="linkish" onClick={() => setConfirming(null)}>não</button>
+        </span>
+      ) : (
+        <>
+          {p.playlistUrl && (
+            <a className="linkish" href={p.playlistUrl} target="_blank" rel="noreferrer">
+              abrir no Spotify ↗
+            </a>
+          )}
+          <button className="icon-btn" title="Tirar do histórico" aria-label={`Tirar ${p.playlistName} do histórico`} onClick={() => setConfirming(p.id)}>
+            ✕
+          </button>
+        </>
+      )}
+    </li>
+  );
 
   const byLineup = new Map<string, PlaylistSummary[]>();
   for (const p of playlists) byLineup.set(p.lineupId, [...(byLineup.get(p.lineupId) ?? []), p]);
@@ -103,36 +168,40 @@ export function HistoryPage({ onOpenLineup, onNewPoster, onAuthRequired }: Props
                         {l.festival ?? "Festival sem nome"} {l.edition && <span>{l.edition}</span>}
                       </div>
                       <div className="ticket-meta mono">
-                        {failed ? "não foi possível ler este cartaz" : `${l.artistCount} artistas`}
+                        {failed ? "não foi possível ler este cartaz" : `${l.artistCount} ${l.artistCount === 1 ? "artista" : "artistas"}`}
                         {lists.length > 0 && ` · ${lists.length} ${lists.length === 1 ? "playlist" : "playlists"}`}
                       </div>
                       {lists.length > 0 && (
-                        <ul className="ticket-playlists">
-                          {lists.map((p) => (
-                            <li key={p.id}>
-                              <span className="pl-name">{p.playlistName}</span>
-                              <span className="mono pl-meta">
-                                {p.tracksAdded} músicas · {formatDate(p.createdAt)}
-                              </span>
-                              {p.playlistUrl && (
-                                <a className="linkish" href={p.playlistUrl} target="_blank" rel="noreferrer">
-                                  abrir no Spotify ↗
-                                </a>
-                              )}
-                            </li>
-                          ))}
-                        </ul>
+                        <ul className="ticket-playlists">{lists.map(playlistItem)}</ul>
                       )}
                     </div>
                     <div className="ticket-stub">
                       {failed ? (
                         <span className="mono">falhou</span>
                       ) : (
-                        <button className="btn alt small" onClick={() => open(l.id)} disabled={opening !== null}>
+                        <button className="btn alt small" onClick={() => open(l.id)} disabled={opening !== null || deleting !== null}>
                           {opening === l.id ? "Abrindo…" : lists.length > 0 ? "Nova playlist →" : "Continuar →"}
                         </button>
                       )}
+                      <button className="linkish stub-delete" onClick={() => setConfirming(l.id)} disabled={deleting !== null}>
+                        apagar
+                      </button>
                     </div>
+                    {confirming === l.id && (
+                      <div className="ticket-confirm" role="alertdialog" aria-label="Confirmar exclusão">
+                        <span>
+                          Apagar <b>{l.festival ?? "este line-up"}</b> e a seleção salva
+                          {lists.length > 0 && ` (e ${lists.length === 1 ? "1 playlist" : `${lists.length} playlists`} do histórico)`}?{" "}
+                          <span className="mono">As playlists continuam no seu Spotify.</span>
+                        </span>
+                        <span className="ticket-confirm-actions">
+                          <button className="btn small danger" onClick={() => removeLineup(l.id)} disabled={deleting !== null}>
+                            {deleting === l.id ? "Apagando…" : "Apagar"}
+                          </button>
+                          <button className="linkish" onClick={() => setConfirming(null)}>cancelar</button>
+                        </span>
+                      </div>
+                    )}
                   </li>
                 );
               })}
@@ -141,21 +210,7 @@ export function HistoryPage({ onOpenLineup, onNewPoster, onAuthRequired }: Props
             {orphans.length > 0 && (
               <div className="orphans">
                 <h3 className="display">Outras playlists</h3>
-                <ul className="ticket-playlists">
-                  {orphans.map((p) => (
-                    <li key={p.id}>
-                      <span className="pl-name">{p.playlistName}</span>
-                      <span className="mono pl-meta">
-                        {p.tracksAdded} músicas · {formatDate(p.createdAt)}
-                      </span>
-                      {p.playlistUrl && (
-                        <a className="linkish" href={p.playlistUrl} target="_blank" rel="noreferrer">
-                          abrir no Spotify ↗
-                        </a>
-                      )}
-                    </li>
-                  ))}
-                </ul>
+                <ul className="ticket-playlists">{orphans.map(playlistItem)}</ul>
               </div>
             )}
           </>

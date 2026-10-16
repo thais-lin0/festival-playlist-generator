@@ -292,12 +292,14 @@ function handler(event) {
     route(apigw.HttpMethod.GET, "/lineups");
     route(apigw.HttpMethod.GET, "/lineups/{id}");
     route(apigw.HttpMethod.PUT, "/lineups/{id}");
+    route(apigw.HttpMethod.DELETE, "/lineups/{id}");
     route(apigw.HttpMethod.GET, "/spotify/status");
     route(apigw.HttpMethod.POST, "/spotify/authorize");
     route(apigw.HttpMethod.DELETE, "/spotify/connection");
     route(apigw.HttpMethod.POST, "/playlists");
     route(apigw.HttpMethod.GET, "/playlists");
     route(apigw.HttpMethod.GET, "/playlists/{id}");
+    route(apigw.HttpMethod.DELETE, "/playlists/{id}");
 
     const apiUrl = httpApi.apiEndpoint;
 

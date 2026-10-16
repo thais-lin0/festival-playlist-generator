@@ -583,3 +583,25 @@ kbd {
   .ticket-playlists .linkish { margin-left: 0; }
   .history-stats b { font-size: 40px; }
 }
+
+/* ---------- History: delete ---------- */
+.ticket-stub { flex-direction: column; gap: 10px; }
+.stub-delete { font-size: 12px; color: var(--ink-soft); }
+.stub-delete:hover:not(:disabled) { color: #b0135f; }
+.ticket-confirm {
+  grid-column: 1 / -1; display: flex; justify-content: space-between; align-items: center; gap: 12px 20px; flex-wrap: wrap;
+  padding: 12px 20px; border-top: 2px solid var(--ink); background: #ffe3f0; border-radius: 0 0 6px 6px; font-size: 14px;
+  animation: toastIn 0.25s var(--ease) both;
+}
+.ticket-confirm .mono { font-size: 11px; text-transform: uppercase; color: var(--ink-soft); display: block; margin-top: 2px; }
+.ticket-confirm-actions { display: flex; gap: 14px; align-items: center; }
+.btn.danger { background: #d4145a; border-color: #d4145a; color: #fff; box-shadow: 3px 3px 0 var(--ink); }
+.btn.danger:hover:not(:disabled) { box-shadow: 4px 4px 0 var(--ink); }
+.linkish.danger { color: #b0135f; font-weight: 700; }
+.ticket-playlists li.confirming { background: #ffe3f0; border-color: var(--pink); }
+.ticket-playlists .icon-btn { margin-left: 0; }
+.pl-confirm { font-size: 11px; text-transform: uppercase; margin-left: auto; }
+@media (max-width: 860px) {
+  .ticket-stub { flex-direction: row; justify-content: space-between; }
+  .pl-confirm { margin-left: 0; }
+}

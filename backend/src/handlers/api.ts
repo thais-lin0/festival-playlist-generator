@@ -6,6 +6,8 @@ import { z } from "zod";
 import type { CreateLineupResponse, Lineup, PlaylistJob, SpotifyStatus } from "../../../lib/types";
 import { seal, unseal } from "../lib/crypto";
 import {
+  deleteJob,
+  deleteLineup,
   deleteSpotifyConnection,
   getJob,
   getLineup,
@@ -158,6 +160,14 @@ const saveLineup: Handler = async (event, sub) => {
   return json(200, rest);
 };
 
+const removeLineup: Handler = async (event, sub) => {
+  const id = event.pathParameters!.id!;
+  if (!(await getLineup(sub, id))) return error(404, "Line-up não encontrado.");
+  const playlistsRemoved = await deleteLineup(sub, id);
+  log.info("lineup deleted", { lineupId: id, playlistsRemoved });
+  return json(200, { ok: true, playlistsRemoved });
+};
+
 // ---------- spotify ----------
 
 const spotifyStatus: Handler = async (_event, sub) => {
@@ -230,6 +240,14 @@ const createPlaylistJob: Handler = async (event, sub) => {
 
 const listPlaylists: Handler = async (_event, sub) => json(200, { playlists: await listJobs(sub) });
 
+const removePlaylist: Handler = async (event, sub) => {
+  const job = await getJob(sub, event.pathParameters!.id!);
+  if (!job) return error(404, "Playlist não encontrada.");
+  if (job.status === "QUEUED" || job.status === "RUNNING") return error(409, "Essa playlist ainda está sendo criada.");
+  await deleteJob(sub, job.id);
+  return json(200, { ok: true });
+};
+
 const getPlaylistJob: Handler = async (event, sub) => {
   const job = await getJob(sub, event.pathParameters!.id!);
   if (!job) return error(404, "Playlist não encontrada.");
@@ -244,11 +262,13 @@ const routes: Record<string, Handler> = {
   "GET /lineups": listUserLineups,
   "GET /lineups/{id}": getUserLineup,
   "PUT /lineups/{id}": saveLineup,
+  "DELETE /lineups/{id}": removeLineup,
   "GET /spotify/status": spotifyStatus,
   "POST /spotify/authorize": spotifyAuthorize,
   "DELETE /spotify/connection": spotifyDisconnect,
   "POST /playlists": createPlaylistJob,
   "GET /playlists": listPlaylists,
+  "DELETE /playlists/{id}": removePlaylist,
   "GET /playlists/{id}": getPlaylistJob,
 };
 

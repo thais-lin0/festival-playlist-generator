@@ -168,7 +168,18 @@ export default function Home() {
 
       {notice && <div className="toast mono" role="status">{notice}</div>}
 
-      {hydrated && onHistory && user && <HistoryPage onOpenLineup={openLineup} onNewPoster={restart} onAuthRequired={onAuthRequired} />}
+      {hydrated && onHistory && user && <HistoryPage
+          onOpenLineup={openLineup}
+          onLineupDeleted={(id) => {
+            // The open selection was this line-up: drop it so nothing points at deleted data.
+            if (state.lineup?.id === id) {
+              clearState();
+              setState(initialState);
+            }
+          }}
+          onNewPoster={restart}
+          onAuthRequired={onAuthRequired}
+        />}
       {hydrated && !onHistory && state.step === 1 && (
         <UploadStep
           user={user}
