@@ -240,7 +240,7 @@ function Done({ result, onBack, onRestart }: { result: PlaylistResult; onBack: (
         )}
         <p className="back" style={{ display: "flex", gap: 18 }}>
           <button className="linkish" onClick={onBack}>← ajustar seleção</button>
-          <button className="linkish" onClick={onRestart}>começar com outro cartaz</button>
+          <button className="btn alt small" onClick={onRestart}>+ Novo cartaz</button>
         </p>
       </div>
       <div className="setlist reveal" style={{ ["--i" as string]: 2 }}>

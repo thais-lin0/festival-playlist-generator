@@ -100,6 +100,8 @@ export default function Home() {
   }
 
   const stepState = (n: number) => (state.step === n ? "current" : state.step > n ? "done" : "todo");
+  // Step chips double as navigation: back to any step already reached.
+  const canGo = (n: 1 | 2 | 3) => n < state.step || (n === 2 && Boolean(state.lineup)) ;
 
   return (
     <main className={`shell ${state.step === 1 ? "onepage" : ""}`}>
@@ -108,10 +110,19 @@ export default function Home() {
           Line-up <span className="arrow">→</span> Playlist
         </button>
         <div className="mast-right">
+          {state.step > 1 && (
+            <button className="btn alt small" onClick={restart}>
+              + Novo cartaz
+            </button>
+          )}
           <ol className="steps" aria-label="Etapas">
-            <li data-state={stepState(1)}>01 Cartaz</li>
-            <li data-state={stepState(2)}>02 Seleção</li>
-            <li data-state={stepState(3)}>03 Playlist</li>
+            {([1, 2, 3] as const).map((n) => (
+              <li key={n} data-state={stepState(n)}>
+                <button disabled={state.step === n || !canGo(n)} onClick={() => (n === 1 ? restart() : goto(n))}>
+                  0{n} {["Cartaz", "Seleção", "Playlist"][n - 1]}
+                </button>
+              </li>
+            ))}
           </ol>
           {hydrated &&
             (user ? (
@@ -139,7 +150,7 @@ export default function Home() {
           onLineup={openLineup}
         />
       )}
-      {hydrated && state.step === 2 && state.lineup && <SelectStep state={state} update={update} onNext={() => goto(3)} onBack={restart} />}
+      {hydrated && state.step === 2 && state.lineup && <SelectStep state={state} update={update} onNext={() => goto(3)} />}
       {hydrated && state.step === 3 && state.lineup && (
         <PlaylistStep state={state} update={update} onBack={() => goto(2)} onRestart={restart} onAuthRequired={onAuthRequired} />
       )}

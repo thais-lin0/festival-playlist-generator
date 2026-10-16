@@ -1,9 +1,9 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/api";
 import { genreOf, includedArtists, type AppState } from "@/lib/state";
-import type { Lineup, LineupArtist, Ordering, PlaylistMode, Preference } from "@/lib/types";
+import type { Lineup, LineupArtist, Ordering, PlaylistMode, Preference, ResolvedArtist } from "@/lib/types";
 
 const MODES: { id: PlaylistMode; k: string; title: string; hint: string }[] = [
   { id: "full", k: "A", title: "Line-up completo", hint: "Todos os artistas do cartaz" },
@@ -18,14 +18,16 @@ const ORDERINGS: { id: Ordering; label: string }[] = [
   { id: "festival", label: "Ordem do cartaz" },
 ];
 
+type View = "cards" | "list";
+const VIEW_KEY = "fpg_view";
+
 interface Props {
   state: AppState;
   update: (patch: Partial<AppState>) => void;
   onNext: () => void;
-  onBack: () => void;
 }
 
-export function SelectStep({ state, update, onNext, onBack }: Props) {
+export function SelectStep({ state, update, onNext }: Props) {
   const lineup = state.lineup!;
   const [dayFilter, setDayFilter] = useState<string | null>(null);
   const [genreFilter, setGenreFilter] = useState<string | null>(null);
@@ -33,6 +35,20 @@ export function SelectStep({ state, update, onNext, onBack }: Props) {
   const [editing, setEditing] = useState<string | null>(null);
   const [newName, setNewName] = useState("");
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [view, setView] = useState<View>("cards");
+
+  // Remember the preferred view on this device.
+  useEffect(() => {
+    try {
+      if (localStorage.getItem(VIEW_KEY) === "list") setView("list");
+    } catch {}
+  }, []);
+  const changeView = (v: View) => {
+    setView(v);
+    try {
+      localStorage.setItem(VIEW_KEY, v);
+    } catch {}
+  };
 
   const included = includedArtists(state);
   const includedIds = new Set(included.map((a) => a.id));
@@ -51,13 +67,14 @@ export function SelectStep({ state, update, onNext, onBack }: Props) {
     (a) =>
       (!effectiveDay || a.day === effectiveDay) &&
       (!genreFilter || genreOf(a, lineup) === genreFilter) &&
-      (!query || a.name.toLowerCase().includes(query.toLowerCase())),
+      (!query || a.name.toLowerCase().includes(query.trim().toLowerCase())),
   );
 
   const groupByDay = lineup.days.length > 1 && !effectiveDay;
   const groups: [string | null, LineupArtist[]][] = groupByDay
     ? [...lineup.days.map((d) => [d, visible.filter((a) => a.day === d)] as [string, LineupArtist[]]), [null, visible.filter((a) => !a.day)]]
     : [[null, visible]];
+  const filtersActive = Boolean(dayFilter || genreFilter || query);
 
   function toggle(id: string) {
     const base = state.mode === "selection" ? state.selected : [...includedIds];
@@ -92,20 +109,39 @@ export function SelectStep({ state, update, onNext, onBack }: Props) {
   }
 
   function remove(id: string) {
-    saveArtists(lineup.artists.filter((a) => a.id !== id), { selected: state.selected.filter((x) => x !== id) });
+    const { [id]: _gone, ...prefs } = state.prefs;
+    saveArtists(
+      lineup.artists.filter((a) => a.id !== id),
+      { selected: state.selected.filter((x) => x !== id), prefs },
+    );
   }
 
   function addArtist() {
     const name = newName.trim();
     if (!name) return;
     const order = Math.max(-1, ...lineup.artists.map((a) => a.order)) + 1;
-    const artist: LineupArtist = { id: `m${Date.now()}`, name, day: dayFilter ?? null, genre: null, tier: "undercard", order };
+    const artist: LineupArtist = { id: `m${Date.now()}`, name, day: effectiveDay ?? null, genre: null, tier: "undercard", order };
     saveArtists([...lineup.artists, artist], { selected: [...state.selected, artist.id] });
     setNewName("");
   }
 
   const discoverCount = Object.values(state.prefs).filter((p) => p === "discover").length;
   const estimate = included.length * state.tracksPerArtist;
+
+  const itemProps = (a: LineupArtist) => ({
+    artist: a,
+    resolved: lineup.resolved[a.id],
+    genre: genreOf(a, lineup),
+    isIn: includedIds.has(a.id),
+    pref: state.prefs[a.id] ?? "none",
+    editing: editing === a.id,
+    onToggle: () => toggle(a.id),
+    onPref: (p: Preference) => setPref(a.id, p),
+    onEdit: () => setEditing(a.id),
+    onRename: (name: string) => rename(a.id, name),
+    onCancelEdit: () => setEditing(null),
+    onRemove: () => remove(a.id),
+  });
 
   return (
     <>
@@ -114,8 +150,6 @@ export function SelectStep({ state, update, onNext, onBack }: Props) {
         <div className="meta reveal" style={{ ["--i" as string]: 1 }}>
           {lineup.edition && <div>Edição {lineup.edition}</div>}
           <div>{lineup.artists.length} artistas identificados</div>
-          {lineup.demo && <div style={{ color: "#b0135f" }}>Line-up de demonstração</div>}
-          <button className="linkish" onClick={onBack}>← enviar outro cartaz</button>
         </div>
       </section>
 
@@ -160,72 +194,44 @@ export function SelectStep({ state, update, onNext, onBack }: Props) {
             ))}
           </div>
         )}
-        <input className="search" placeholder="Buscar artista…" value={query} onChange={(e) => setQuery(e.target.value)} aria-label="Buscar artista" />
+        <input className="search" type="search" placeholder="Buscar artista…" value={query} onChange={(e) => setQuery(e.target.value)} aria-label="Buscar artista" />
       </div>
 
       <div className="bulk mono">
-        <span>{visible.length} visíveis</span>
+        <span>
+          {visible.length} de {lineup.artists.length}
+        </span>
         <button className="linkish" onClick={() => selectVisible(true)}>marcar visíveis</button>
         <button className="linkish" onClick={() => selectVisible(false)}>desmarcar visíveis</button>
-        {state.mode === "discover" && discoverCount === 0 && <span style={{ color: "#b0135f" }}>Marque artistas com ✦ quero conhecer</span>}
+        {filtersActive && (
+          <button
+            className="linkish"
+            onClick={() => {
+              setDayFilter(null);
+              setGenreFilter(null);
+              setQuery("");
+            }}
+          >
+            limpar filtros
+          </button>
+        )}
+        {state.mode === "discover" && discoverCount === 0 && <span className="hint-warn">Marque artistas com ✦ quero conhecer</span>}
+        <div className="view-toggle" role="group" aria-label="Exibição">
+          <button aria-pressed={view === "cards"} onClick={() => changeView("cards")}>▦ Fotos</button>
+          <button aria-pressed={view === "list"} onClick={() => changeView("list")}>☰ Lista</button>
+        </div>
       </div>
 
       {visible.length === 0 ? (
         <div className="empty">Nenhum artista com esses filtros.</div>
       ) : (
-        <div className="grid">
+        <div className={view === "cards" ? "grid" : "list"}>
           {groups.map(([day, artists]) =>
             artists.length === 0 ? null : (
-              <Group key={day ?? "none"} day={groupByDay ? day ?? "Sem dia definido" : null}>
-                {artists.map((a, i) => {
-                  const r = lineup.resolved[a.id];
-                  const isIn = includedIds.has(a.id);
-                  const pref = state.prefs[a.id] ?? "none";
-                  return (
-                    <article key={a.id} className={`card ${a.tier} ${isIn ? "in" : ""} reveal`} style={{ ["--i" as string]: Math.min(i, 12) }}>
-                      <div className="art" onClick={() => toggle(a.id)} role="button" aria-pressed={isIn} aria-label={`Incluir ${a.name}`}>
-                        {r?.imageUrl ? <img src={r.imageUrl} alt="" loading="lazy" /> : <div className="initials">{initials(a.name)}</div>}
-                        <span className="pick">{isIn ? "✓" : "+"}</span>
-                        {r && <span className="match">{r.match === "exact" ? "no spotify" : r.match === "close" ? "nome aproximado" : "não encontrado"}</span>}
-                      </div>
-                      <div className="body">
-                        {editing === a.id ? (
-                          <input
-                            className="name-input"
-                            defaultValue={a.name}
-                            autoFocus
-                            onBlur={(e) => rename(a.id, e.target.value)}
-                            onKeyDown={(e) => {
-                              if (e.key === "Enter") rename(a.id, e.currentTarget.value);
-                              if (e.key === "Escape") setEditing(null);
-                            }}
-                          />
-                        ) : (
-                          <div className="name">{a.name}</div>
-                        )}
-                        <div className="sub">
-                          {a.day && <span>{a.day}</span>}
-                          {genreOf(a, lineup) && <span>· {genreOf(a, lineup)}</span>}
-                          {r?.match === "close" && r.spotifyName && <span>· = {r.spotifyName}</span>}
-                        </div>
-                        <div className="row">
-                          <button className="pref fav" aria-pressed={pref === "favorite"} onClick={() => setPref(a.id, "favorite")}>
-                            ♥ favorito
-                          </button>
-                          <button className="pref disc" aria-pressed={pref === "discover"} onClick={() => setPref(a.id, "discover")}>
-                            ✦ quero conhecer
-                          </button>
-                          <button className="icon-btn" title="Corrigir nome" onClick={() => setEditing(a.id)}>
-                            ✎
-                          </button>
-                          <button className="icon-btn" style={{ marginLeft: 0 }} title="Remover" onClick={() => remove(a.id)}>
-                            ✕
-                          </button>
-                        </div>
-                      </div>
-                    </article>
-                  );
-                })}
+              <Group key={day ?? "none"} day={groupByDay ? day ?? "Sem dia definido" : null} count={artists.length}>
+                {artists.map((a, i) =>
+                  view === "cards" ? <ArtistCard key={a.id} index={i} {...itemProps(a)} /> : <ArtistRow key={a.id} {...itemProps(a)} />,
+                )}
               </Group>
             ),
           )}
@@ -241,7 +247,7 @@ export function SelectStep({ state, update, onNext, onBack }: Props) {
           onChange={(e) => setNewName(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && addArtist()}
         />
-        <button className="btn alt" style={{ fontSize: 16, padding: "8px 14px" }} onClick={addArtist}>
+        <button className="btn alt small" onClick={addArtist} disabled={!newName.trim()}>
           + Adicionar
         </button>
       </div>
@@ -281,12 +287,121 @@ export function SelectStep({ state, update, onNext, onBack }: Props) {
   );
 }
 
-function Group({ day, children }: { day: string | null; children: React.ReactNode }) {
+// ---------- artist views ----------
+
+interface ItemProps {
+  artist: LineupArtist;
+  resolved: ResolvedArtist | undefined;
+  genre: string | null;
+  isIn: boolean;
+  pref: Preference;
+  editing: boolean;
+  onToggle: () => void;
+  onPref: (p: Preference) => void;
+  onEdit: () => void;
+  onRename: (name: string) => void;
+  onCancelEdit: () => void;
+  onRemove: () => void;
+}
+
+function NameField({ artist, editing, onRename, onCancelEdit, className }: ItemProps & { className: string }) {
+  if (!editing) return <div className={className}>{artist.name}</div>;
+  return (
+    <input
+      className="name-input"
+      defaultValue={artist.name}
+      autoFocus
+      aria-label={`Corrigir nome de ${artist.name}`}
+      onBlur={(e) => onRename(e.target.value)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") e.currentTarget.blur();
+        if (e.key === "Escape") {
+          // Restore the original so the blur that follows saves nothing.
+          e.currentTarget.value = artist.name;
+          onCancelEdit();
+        }
+      }}
+    />
+  );
+}
+
+function matchLabel(r: ResolvedArtist | undefined): string | null {
+  if (!r) return null;
+  return r.match === "exact" ? "no spotify" : r.match === "close" ? "nome aproximado" : "não encontrado";
+}
+
+function Actions({ artist, pref, onPref, onEdit, onRemove, compact }: ItemProps & { compact?: boolean }) {
+  return (
+    <>
+      <button className="pref fav" aria-pressed={pref === "favorite"} onClick={() => onPref("favorite")} title="Favorito">
+        ♥{compact ? "" : " favorito"}
+      </button>
+      <button className="pref disc" aria-pressed={pref === "discover"} onClick={() => onPref("discover")} title="Quero conhecer">
+        ✦{compact ? "" : " quero conhecer"}
+      </button>
+      <button className="icon-btn" title="Corrigir nome" aria-label={`Corrigir nome de ${artist.name}`} onClick={onEdit}>
+        ✎
+      </button>
+      <button className="icon-btn" title="Remover" aria-label={`Remover ${artist.name}`} onClick={onRemove}>
+        ✕
+      </button>
+    </>
+  );
+}
+
+function ArtistCard(props: ItemProps & { index: number }) {
+  const { artist: a, resolved: r, genre, isIn, onToggle, index } = props;
+  return (
+    <article className={`card ${a.tier} ${isIn ? "in" : ""} reveal`} style={{ ["--i" as string]: Math.min(index, 12) }}>
+      <button className="art" onClick={onToggle} aria-pressed={isIn} aria-label={`${isIn ? "Tirar" : "Incluir"} ${a.name}`}>
+        {r?.imageUrl ? <img src={r.imageUrl} alt="" loading="lazy" /> : <div className="initials">{initials(a.name)}</div>}
+        <span className="pick">{isIn ? "✓" : "+"}</span>
+        {matchLabel(r) && <span className="match">{matchLabel(r)}</span>}
+      </button>
+      <div className="body">
+        <NameField {...props} className="name" />
+        <div className="sub">
+          {a.day && <span>{a.day}</span>}
+          {genre && <span>· {genre}</span>}
+          {r?.match === "close" && r.spotifyName && <span>· = {r.spotifyName}</span>}
+        </div>
+        <div className="row">
+          <Actions {...props} />
+        </div>
+      </div>
+    </article>
+  );
+}
+
+function ArtistRow(props: ItemProps) {
+  const { artist: a, resolved: r, genre, isIn, onToggle } = props;
+  return (
+    <div className={`list-row ${a.tier} ${isIn ? "in" : ""}`}>
+      <button className="list-check" onClick={onToggle} aria-pressed={isIn} aria-label={`${isIn ? "Tirar" : "Incluir"} ${a.name}`}>
+        {isIn ? "✓" : ""}
+      </button>
+      <div className="list-main" onClick={props.editing ? undefined : onToggle}>
+        <NameField {...props} className="list-name" />
+        <div className="list-sub mono">
+          {[a.day, genre, r?.match === "close" && r.spotifyName ? `= ${r.spotifyName}` : null, r?.match === "none" ? "não encontrado" : null]
+            .filter(Boolean)
+            .join(" · ")}
+        </div>
+      </div>
+      <div className="list-actions">
+        <Actions {...props} compact />
+      </div>
+    </div>
+  );
+}
+
+function Group({ day, count, children }: { day: string | null; count: number; children: React.ReactNode }) {
   return (
     <>
       {day && (
         <div className="daybreak">
           <h3 className="display misreg">{day}</h3>
+          <span className="mono">{count}</span>
           <hr />
         </div>
       )}

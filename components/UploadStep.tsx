@@ -7,7 +7,7 @@ import type { AuthUser } from "@/lib/auth";
 import { MAX_UPLOAD_BYTES, preparePoster } from "@/lib/client-image";
 import type { CreateLineupResponse, Lineup, LineupSummary } from "@/lib/types";
 
-const PHASES = ["Enviando o cartaz", "Lendo o texto (OCR)", "Identificando artistas com IA", "Buscando no Spotify"];
+const PHASES = ["Enviando o cartaz", "Lendo artistas", "Organizando o line-up", "Buscando no Spotify"];
 const POLL_TIMEOUT_MS = 4 * 60_000;
 
 function phaseOf(lineup: Lineup): number {
@@ -34,6 +34,11 @@ export function UploadStep({ user, authMode, onAuthMode, onSignedIn, onAuthRequi
   const [preview, setPreview] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [history, setHistory] = useState<LineupSummary[]>([]);
+  const [pasteKey, setPasteKey] = useState("Ctrl+V");
+
+  useEffect(() => {
+    if (/Mac|iPhone|iPad/.test(navigator.platform)) setPasteKey("⌘V");
+  }, []);
 
   useEffect(() => {
     if (!user) return setHistory([]);
@@ -41,6 +46,24 @@ export function UploadStep({ user, authMode, onAuthMode, onSignedIn, onAuthRequi
       .then((d) => setHistory(d.lineups.filter((l) => l.status === "READY")))
       .catch((e) => e instanceof AuthRequiredError && onAuthRequired());
   }, [user, onAuthRequired]);
+
+  // Ctrl/⌘+V anywhere on this screen: use an image from the clipboard (e.g. a screenshot of the poster).
+  useEffect(() => {
+    if (!user) return;
+    const onPaste = (e: ClipboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (target?.closest("input, textarea")) return;
+      const file = [...(e.clipboardData?.files ?? [])].find((f) => f.type.startsWith("image/"));
+      if (file) {
+        e.preventDefault();
+        handleFile(file);
+      } else if (e.clipboardData?.types.includes("text/plain")) {
+        setError("Copie a imagem do cartaz (não o link ou o texto) e cole de novo.");
+      }
+    };
+    window.addEventListener("paste", onPaste);
+    return () => window.removeEventListener("paste", onPaste);
+  });
 
   async function run(task: () => Promise<Lineup>) {
     setBusy(true);
@@ -81,16 +104,15 @@ export function UploadStep({ user, authMode, onAuthMode, onSignedIn, onAuthRequi
       if (blob.size > MAX_UPLOAD_BYTES) throw new Error("Imagem muito grande mesmo após compressão. Tente outra foto.");
       const { lineup, upload } = await api<CreateLineupResponse>("/lineups", { method: "POST", body: JSON.stringify({}) });
       const form = new FormData();
-      for (const [k, v] of Object.entries(upload!.fields)) form.append(k, v);
+      for (const [k, v] of Object.entries(upload.fields)) form.append(k, v);
       form.append("file", blob, "poster.jpg");
-      const res = await fetch(upload!.url, { method: "POST", body: form });
+      const res = await fetch(upload.url, { method: "POST", body: form });
       if (!res.ok) throw new Error("Falha ao enviar a imagem.");
       setPhase(1);
       return waitUntilReady(lineup.id);
     });
   }
 
-  const useDemo = () => run(async () => (await api<CreateLineupResponse>("/lineups", { method: "POST", body: JSON.stringify({ demo: true }) })).lineup);
   const openSaved = (id: string) => run(() => api<Lineup>(`/lineups/${id}`));
 
   return (
@@ -159,12 +181,15 @@ export function UploadStep({ user, authMode, onAuthMode, onSignedIn, onAuthRequi
               </>
             ) : (
               <>
-                <div className="display big">Solte o cartaz aqui</div>
-                <div className="mono" style={{ fontSize: 13 }}>ou clique para escolher · PNG, JPG, WEBP</div>
+                <div className="display big">
+                  <span className="only-pointer">Solte o cartaz aqui</span>
+                  <span className="only-touch">Toque para escolher o cartaz</span>
+                </div>
+                <div className="drop-hint mono only-pointer">
+                  clique para escolher <span>·</span> cole com <kbd>{pasteKey}</kbd>
+                </div>
+                <div className="mono drop-formats">PNG, JPG ou WEBP</div>
                 <input type="file" accept="image/*" aria-label="Enviar cartaz" onChange={(e) => handleFile(e.target.files?.[0])} />
-                <button className="linkish demo-link" onClick={useDemo}>
-                  sem cartaz à mão? testar com um line-up de exemplo →
-                </button>
               </>
             )}
           </div>

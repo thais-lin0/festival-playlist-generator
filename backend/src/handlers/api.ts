@@ -18,7 +18,6 @@ import {
   takeOAuthState,
   updateLineup,
 } from "../lib/db";
-import { DEMO } from "../lib/demo";
 import { env } from "../lib/env";
 import { error, HttpError, json, redirect } from "../lib/http";
 import { log } from "../lib/log";
@@ -94,7 +93,6 @@ async function spotifyReady(): Promise<boolean> {
 // ---------- lineups ----------
 
 const createLineup: Handler = async (event, sub) => {
-  const { demo } = body(event, z.object({ demo: z.boolean().optional() }));
   const id = newId();
   const base: Lineup = {
     id,
@@ -108,15 +106,7 @@ const createLineup: Handler = async (event, sub) => {
     artists: [],
     resolved: {},
     selection: null,
-    demo: Boolean(demo),
   };
-
-  if (demo) {
-    const resolved = (await spotifyReady()) ? await resolveArtists(DEMO.artists).catch(() => ({})) : {};
-    const lineup: Lineup = { ...base, ...DEMO, status: "READY", resolved };
-    await putLineup(sub, lineup, null);
-    return json(201, { lineup, upload: null } satisfies CreateLineupResponse);
-  }
 
   const key = `uploads/${sub}/${id}.jpg`;
   await putLineup(sub, base, key);

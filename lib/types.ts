@@ -49,7 +49,6 @@ export interface Lineup {
   artists: LineupArtist[];
   resolved: Record<string, ResolvedArtist>;
   selection: Selection | null;
-  demo: boolean;
 }
 
 export interface LineupSummary {
@@ -63,7 +62,7 @@ export interface LineupSummary {
 
 export interface CreateLineupResponse {
   lineup: Lineup;
-  upload: { url: string; fields: Record<string, string> } | null;
+  upload: { url: string; fields: Record<string, string> };
 }
 
 export interface PlaylistArtistInput {
