@@ -1,0 +1,9 @@
+{
+  "app": "npx tsx infra/app.ts",
+  "context": {
+    "stage": "dev",
+    "bedrockProvider": "nova",
+    "bedrockModelId": "us.amazon.nova-pro-v1:0",
+    "bedrockApi": "invoke"
+  }
+}

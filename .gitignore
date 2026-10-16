@@ -1,0 +1,20 @@
+# dependencies and builds
+node_modules
+.next
+out
+next-env.d.ts
+*.tsbuildinfo
+
+# local config and secrets: never commit
+.env
+.env.*
+public/config.json
+backend/cdk.context.json
+*.pem
+*.key
+
+# OS / editors
+.DS_Store
+.idea
+.vscode
+.kiro
